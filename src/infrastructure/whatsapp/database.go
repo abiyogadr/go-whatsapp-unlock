@@ -36,6 +36,24 @@ func initDatabase(ctx context.Context, dbLog waLog.Logger, DBURI string) (*sqlst
 			DBURI = strings.ReplaceAll(DBURI, "_foreign_keys=1", "_pragma=foreign_keys(1)")
 		}
 
+		// Ensure WAL journal mode for better concurrency and enable shared cache
+		// to reduce SQLITE_BUSY occurrences when multiple connections perform writes.
+		if !strings.Contains(DBURI, "_journal_mode=") {
+			if strings.Contains(DBURI, "?") {
+				DBURI += "&_journal_mode=WAL"
+			} else {
+				DBURI += "?_journal_mode=WAL"
+			}
+		}
+		if !strings.Contains(DBURI, "_cache=") {
+			DBURI += "&_cache=shared"
+		}
+
+		// Add a busy timeout PRAGMA to reduce transient SQLITE_BUSY errors
+		if !strings.Contains(DBURI, "busy_timeout") {
+			DBURI += "&_pragma=busy_timeout(5000)"
+		}
+
 		return sqlstore.New(ctx, "sqlite", DBURI, dbLog)
 	} else if strings.HasPrefix(DBURI, "postgres:") {
 		return sqlstore.New(ctx, "postgres", DBURI, dbLog)
