@@ -27,11 +27,11 @@ import (
 	"github.com/aldinokemal/go-whatsapp-web-multidevice/pkg/utils"
 	"github.com/aldinokemal/go-whatsapp-web-multidevice/usecase"
 	_ "github.com/lib/pq"
-	_ "modernc.org/sqlite"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 	"go.mau.fi/whatsmeow"
+	_ "modernc.org/sqlite"
 )
 
 var (
@@ -229,13 +229,13 @@ func initFlags() {
 		&config.DBURI,
 		"db-uri", "",
 		config.DBURI,
-		`the database uri to store the connection data database uri (by default, we'll use sqlite3 under storages/whatsapp.db). database uri --db-uri <string> | example: --db-uri="file:storages/whatsapp.db?_foreign_keys=on or postgres://user:password@localhost:5432/whatsapp"`,
+		`the database uri to store the connection data database uri (by default, we'll use sqlite under storages/whatsapp.db). database uri --db-uri <string> | example: --db-uri="file:storages/whatsapp.db?_pragma=foreign_keys(1) or postgres://user:password@localhost:5432/whatsapp"`,
 	)
 	rootCmd.PersistentFlags().StringVarP(
 		&config.DBKeysURI,
 		"db-keys-uri", "",
 		config.DBKeysURI,
-		`the database uri to store the keys database uri (by default, we'll use the same database uri). database uri --db-keys-uri <string> | example: --db-keys-uri="file::memory:?cache=shared&_foreign_keys=on"`,
+		`the database uri to store the keys database uri (by default, we'll use the same database uri). database uri --db-keys-uri <string> | example: --db-keys-uri="file::memory:?cache=shared&_pragma=foreign_keys(1)"`,
 	)
 
 	// WhatsApp flags
@@ -330,7 +330,8 @@ func initFlags() {
 func initChatStorage() (*sql.DB, error) {
 	connStr := fmt.Sprintf("%s?_journal_mode=WAL", config.ChatStorageURI)
 	if config.ChatStorageEnableForeignKeys {
-		connStr += "&_foreign_keys=on"
+		// Use PRAGMA form compatible with modernc.org/sqlite and other pure‑Go drivers
+		connStr += "&_pragma=foreign_keys(1)"
 	}
 
 	db, err := sql.Open("sqlite", connStr)

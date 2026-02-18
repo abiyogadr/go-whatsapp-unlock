@@ -27,13 +27,21 @@ func InitWaDB(ctx context.Context, DBURI string) *sqlstore.Container {
 
 // initDatabase creates and returns a database store container based on the configured URI
 func initDatabase(ctx context.Context, dbLog waLog.Logger, DBURI string) (*sqlstore.Container, error) {
+	// Normalize commonly used SQLite DSN flags so they work with pure‑Go drivers
+	// (e.g. modernc.org/sqlite expects PRAGMA via `_pragma=`).
 	if strings.HasPrefix(DBURI, "file:") {
+		// Accept both legacy `_foreign_keys=on|1` and convert to `_pragma=foreign_keys(1)`
+		if strings.Contains(DBURI, "_foreign_keys=on") || strings.Contains(DBURI, "_foreign_keys=1") {
+			DBURI = strings.ReplaceAll(DBURI, "_foreign_keys=on", "_pragma=foreign_keys(1)")
+			DBURI = strings.ReplaceAll(DBURI, "_foreign_keys=1", "_pragma=foreign_keys(1)")
+		}
+
 		return sqlstore.New(ctx, "sqlite", DBURI, dbLog)
 	} else if strings.HasPrefix(DBURI, "postgres:") {
 		return sqlstore.New(ctx, "postgres", DBURI, dbLog)
 	}
 
-	return nil, fmt.Errorf("unknown database type: %s. Currently only sqlite3(file:) and postgres are supported", DBURI)
+	return nil, fmt.Errorf("unknown database type: %s. Currently only sqlite (file:) and postgres are supported", DBURI)
 }
 
 // GetConnectionStatus returns the current connection status of the global client
