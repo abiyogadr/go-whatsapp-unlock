@@ -13,6 +13,7 @@ import (
 
 	"github.com/aldinokemal/go-whatsapp-web-multidevice/config"
 	domainApp "github.com/aldinokemal/go-whatsapp-web-multidevice/domains/app"
+	domainAutoReply "github.com/aldinokemal/go-whatsapp-web-multidevice/domains/auto_reply"
 	domainChat "github.com/aldinokemal/go-whatsapp-web-multidevice/domains/chat"
 	domainChatStorage "github.com/aldinokemal/go-whatsapp-web-multidevice/domains/chatstorage"
 	domainDevice "github.com/aldinokemal/go-whatsapp-web-multidevice/domains/device"
@@ -26,7 +27,7 @@ import (
 	"github.com/aldinokemal/go-whatsapp-web-multidevice/pkg/utils"
 	"github.com/aldinokemal/go-whatsapp-web-multidevice/usecase"
 	_ "github.com/lib/pq"
-	_ "github.com/mattn/go-sqlite3"
+	_ "modernc.org/sqlite"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -51,6 +52,7 @@ var (
 	userUsecase       domainUser.IUserUsecase
 	messageUsecase    domainMessage.IMessageUsecase
 	groupUsecase      domainGroup.IGroupUsecase
+	autoReplyUsecase  domainAutoReply.IAutoReplyUsecase
 	newsletterUsecase domainNewsletter.INewsletterUsecase
 	deviceUsecase     domainDevice.IDeviceUsecase
 )
@@ -331,7 +333,7 @@ func initChatStorage() (*sql.DB, error) {
 		connStr += "&_foreign_keys=on"
 	}
 
-	db, err := sql.Open("sqlite3", connStr)
+	db, err := sql.Open("sqlite", connStr)
 	if err != nil {
 		return nil, err
 	}
@@ -369,6 +371,36 @@ func initApp() {
 		logrus.Fatalf("failed to initialize chat storage: %v", err)
 	}
 
+	// Introspection: print configured chat storage URI and existing tables so we can
+	// verify which DB file is actually used at runtime and whether `auto_replies`
+	// table exists / contains rows (helps diagnose misplaced rules).
+	logrus.Infof("ChatStorageURI=%s", config.ChatStorageURI)
+	// List tables present in the chat storage DB
+	if rows, err := chatStorageDB.Query("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"); err == nil {
+		var tbl string
+		var tables []string
+		for rows.Next() {
+			_ = rows.Scan(&tbl)
+			tables = append(tables, tbl)
+		}
+		rows.Close()
+		logrus.Infof("ChatStorage tables: %v", tables)
+	} else {
+		logrus.Warnf("Failed to list tables in chat storage DB: %v", err)
+	}
+
+	// Check auto_replies row count (report if table missing)
+	var arCount int
+	if err := chatStorageDB.QueryRow("SELECT count(*) FROM auto_replies").Scan(&arCount); err != nil {
+		if strings.Contains(err.Error(), "no such table") {
+			logrus.Infof("auto_replies table not found in chat storage DB")
+		} else {
+			logrus.Warnf("Error querying auto_replies: %v", err)
+		}
+	} else {
+		logrus.Infof("auto_replies rows=%d", arCount)
+	}
+
 	chatStorageRepo = chatstorage.NewStorageRepository(chatStorageDB)
 	chatStorageRepo.InitializeSchema()
 
@@ -393,6 +425,7 @@ func initApp() {
 	userUsecase = usecase.NewUserService()
 	messageUsecase = usecase.NewMessageService(chatStorageRepo)
 	groupUsecase = usecase.NewGroupService()
+	autoReplyUsecase = usecase.NewAutoReplyService(chatStorageRepo)
 	newsletterUsecase = usecase.NewNewsletterService()
 	deviceUsecase = usecase.NewDeviceService(dm)
 }
